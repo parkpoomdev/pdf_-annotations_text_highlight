@@ -6,7 +6,7 @@ A lightweight, client-side PDF annotation tool built with PDF.js and Tailwind CS
 
 Below is a preview of the UI:
 
-![PDF Annotator Preview](assets/preview.png)
+![Uploading image.png…]()
 
 > The preview shows the left PDF viewer with selectable text and the right panel listing saved annotations with per-annotation actions and reply inputs.
 
