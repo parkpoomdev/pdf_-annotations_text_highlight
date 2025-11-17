@@ -45,6 +45,25 @@
             cursor: text;
             transform-origin: 0% 0%;
         }
+
+        /* Layer for highlights placed between canvas and text layer */
+        .highlightLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 7; /* below textLayer, above canvas */
+            pointer-events: none;
+        }
+
+        .highlightBox {
+            position: absolute;
+            background: rgba(250, 204, 21, 0.35); /* amber-400 @ 35% */
+            border-radius: 2px;
+            box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.25) inset;
+            mix-blend-mode: multiply;
+        }
         
         /* The comment highlight style */
         .comment-highlight {
@@ -79,6 +98,13 @@
                 grid-template-columns: 1fr;
             }
         }
+        
+        /* Drag & drop visual cue */
+        .drop-active {
+            outline: 3px dashed #6366f1; /* indigo-500 */
+            outline-offset: -8px;
+            background: #eef2ff; /* indigo-100 */
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -103,7 +129,7 @@
             <p class="mt-2">Loading PDF...</p>
         </div>
 
-        <div id="app-container" class="main-grid grid lg:grid-cols-3 gap-6 h-full" style="display: none;">
+        <div id="app-container" class="main-grid grid lg:grid-cols-3 gap-6 h-full">
             
             <!-- PDF Viewer Column (Left) -->
             <div class="lg:col-span-2 bg-white rounded-xl shadow-xl overflow-hidden">
@@ -168,6 +194,7 @@
         let pdfDoc = null;
         let selectedText = "";
         let annotations = []; // Array to store all annotations and their replies
+        let currentSelectionMeta = null; // { pageNumber, rects: [{x,y,width,height}] }
 
         const pdfContainer = document.getElementById('pdf-container');
         const commentsList = document.getElementById('comments-list');
@@ -208,6 +235,18 @@
                        .replace(/'/g, '\\\'')
                        .replace(/"/g, '\\\"');
         }
+
+        /**
+         * Escapes text for safe HTML rendering (e.g., inside innerHTML).
+         * @param {string} text 
+         * @returns {string}
+         */
+        function escapeForHtml(text) {
+            const value = text == null ? '' : String(text);
+            return value.replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;');
+        }
         
         /**
          * Copies text to the clipboard using the synchronous execCommand method
@@ -234,6 +273,32 @@
         }
 
         /**
+         * Sanitizes selected text to remove PDF copy artifacts, control chars,
+         * ligatures, and odd whitespace while preserving readability.
+         * @param {string} s
+         * @returns {string}
+         */
+        function sanitizeText(s) {
+            if (!s) return '';
+            let t = String(s);
+            // Remove hyphen at end-of-line followed by newline (join split words)
+            t = t.replace(/-\s*[\r\n]+/g, '');
+            // Normalize Unicode (convert ligatures like ﬁ → fi)
+            try { t = t.normalize('NFKC'); } catch (e) { /* ignore */ }
+            // Replace non-breaking and thin spaces/etc with regular space
+            t = t.replace(/[\u00A0\u2000-\u200B\u202F\u205F\u3000]/g, ' ');
+            // Replace line breaks with spaces
+            t = t.replace(/[\r\n]+/g, ' ');
+            // Replace C0/C1 control characters with a space
+            t = t.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ');
+            // Optional: normalize curly quotes/dashes to standard characters
+            t = t.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+            // Collapse multiple spaces
+            t = t.replace(/\s{2,}/g, ' ').trim();
+            return t;
+        }
+
+        /**
          * Calculates the viewport position of the current text selection.
          */
         function getSelectionPosition() {
@@ -250,11 +315,18 @@
         }
 
         // --- Core PDF Loading Functions ---
+        function isPdfFile(file) {
+            if (!file) return false;
+            const byType = typeof file.type === 'string' && file.type.toLowerCase().includes('pdf');
+            const byName = typeof file.name === 'string' && /\.pdf$/i.test(file.name);
+            return byType || byName;
+        }
 
-        function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
+        function processPdfFile(file) {
+            if (!isPdfFile(file)) {
+                console.warn('Dropped file is not a PDF.');
+                return;
+            }
             appContainer.style.display = 'grid';
             pdfContainer.innerHTML = '';
             loader.classList.remove('hidden');
@@ -267,22 +339,25 @@
             fileReader.readAsArrayBuffer(file);
         }
 
+        function handleFileSelect(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            processPdfFile(file);
+        }
+
+        // Replaced: renderPDF was corrupted by nested functions. Provide clean implementation.
         async function renderPDF(pdfData) {
             try {
                 pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
                 const numPages = pdfDoc.numPages;
-                
                 for (let i = 1; i <= numPages; i++) {
                     await renderPage(pdfDoc, i);
                 }
                 loader.classList.add('hidden');
-                
-                document.removeEventListener('mouseup', handleTextSelection); 
+                document.removeEventListener('mouseup', handleTextSelection);
                 document.addEventListener('mouseup', handleTextSelection);
-
                 document.removeEventListener('mousedown', checkHideFloatingMenu);
                 document.addEventListener('mousedown', checkHideFloatingMenu);
-
             } catch (error) {
                 console.error('Error rendering PDF:', error);
                 loader.classList.add('hidden');
@@ -290,6 +365,55 @@
             }
         }
 
+        
+            // --- Drag & Drop Setup ---
+            function setupDragAndDrop() {
+                // Prevent default on window to avoid the browser navigating away
+                ;['dragover','drop'].forEach(evt => {
+                    window.addEventListener(evt, e => {
+                        e.preventDefault();
+                    });
+                });
+
+                const dz = pdfContainer;
+                if (!dz) return;
+
+                dz.addEventListener('dragenter', e => {
+                    e.preventDefault();
+                    dz.classList.add('drop-active');
+                });
+                dz.addEventListener('dragover', e => {
+                    e.preventDefault();
+                    dz.classList.add('drop-active');
+                });
+                dz.addEventListener('dragleave', e => {
+                    // Only remove when leaving the container
+                    if (e.target === dz) dz.classList.remove('drop-active');
+                });
+                dz.addEventListener('drop', e => {
+                    e.preventDefault();
+                    dz.classList.remove('drop-active');
+                    const files = e.dataTransfer && e.dataTransfer.files;
+                    if (files && files.length) {
+                        processPdfFile(files[0]);
+                    }
+                });
+
+                // Also accept drop anywhere on the page as a fallback
+                document.body.addEventListener('drop', e => {
+                    e.preventDefault();
+                    dz.classList.remove('drop-active');
+                    const files = e.dataTransfer && e.dataTransfer.files;
+                    if (files && files.length) {
+                        processPdfFile(files[0]);
+                    }
+                });
+                window.addEventListener('dragenter', () => dz.classList.add('drop-active'));
+                window.addEventListener('dragleave', () => dz.classList.remove('drop-active'));
+            }
+
+            // Initialize drag & drop once script loads
+            setupDragAndDrop();
         async function renderPage(pdfDoc, num) {
             const page = await pdfDoc.getPage(num);
             const scale = 1.5;
@@ -299,12 +423,18 @@
             pageWrapper.className = 'page relative mx-auto my-4';
             pageWrapper.style.width = `${viewport.width}px`;
             pageWrapper.style.height = `${viewport.height}px`;
+            pageWrapper.dataset.pageNumber = String(num);
             
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d');
             canvas.height = viewport.height;
             canvas.width = viewport.width;
             pageWrapper.appendChild(canvas);
+
+            // Highlight layer sits above canvas, below textLayer
+            const highlightLayerDiv = document.createElement('div');
+            highlightLayerDiv.className = 'highlightLayer';
+            pageWrapper.appendChild(highlightLayerDiv);
 
             const textLayerDiv = document.createElement('div');
             textLayerDiv.className = 'textLayer absolute top-0 left-0 w-full h-full';
@@ -335,6 +465,8 @@
             if (annotations.length === 0) {
                 commentsList.innerHTML = '<p id="no-comments" class="text-gray-400 italic text-sm">No annotations added yet. Select text in the PDF to start annotating.</p>';
                 exportAllBtn.disabled = true;
+                // still clear highlights
+                renderHighlights();
                 return;
             }
 
@@ -346,7 +478,7 @@
                 commentDiv.className = 'comment-highlight group'; 
                 commentDiv.setAttribute('data-id', ann.id);
 
-                const safeTextForDisplay = ann.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const safeTextForDisplay = escapeForHtml(ann.text);
                 const safeTextForClipboard = escapeForOnclick(ann.text);
                 
                 // Build HTML for replies
@@ -392,7 +524,8 @@
                         <p class="text-xs font-semibold text-gray-600 mb-1">Add Reply/Note:</p>
                         <div class="flex space-x-2">
                             <input type="text" id="reply-input-${ann.id}" placeholder="Type your comment/question here..." 
-                                class="flex-grow text-sm border border-gray-300 p-2 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+                                class="flex-grow text-sm border border-gray-300 p-2 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" 
+                                onkeydown="handleReplyInputKey(event, ${ann.id})">
                             <button onclick="addReply(${ann.id})" class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm py-2 px-3 rounded-lg font-semibold transition duration-150" title="Add Reply">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                     <path fill-rule="evenodd" d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7z" clip-rule="evenodd" />
@@ -405,6 +538,9 @@
 
                 commentsList.appendChild(commentDiv);
             });
+
+            // After rendering side list, render highlights over PDF pages
+            renderHighlights();
         }
 
         /**
@@ -515,11 +651,20 @@
             }
         }
 
+        // Allow pressing Enter inside reply input to submit
+        function handleReplyInputKey(event, annotationId) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                addReply(annotationId);
+            }
+        }
+
         function checkHideFloatingMenu(event) {
             const isClickInsideMenu = floatingMenu.contains(event.target);
             if (!isClickInsideMenu) {
                 floatingMenu.classList.add('hidden');
                 window.getSelection().removeAllRanges();
+                currentSelectionMeta = null;
             }
         }
 
@@ -531,18 +676,34 @@
             setTimeout(() => {
                 const selection = window.getSelection();
                 let rawText = selection.toString();
-
-                // --- Text Cleanup Logic ---
-                // 1. Remove hyphens followed immediately by a newline (fixes hyphenated words across lines, e.g., "prac-\ntice")
-                let cleanedText = rawText.replace(/-\r?\n|\r/g, ''); 
-
-                // 2. Replace all other remaining newlines and multiple spaces with a single space.
-                cleanedText = cleanedText.replace(/\s+/g, ' '); 
-                
-                selectedText = cleanedText.trim();
-                // --- End Text Cleanup Logic ---
+                selectedText = sanitizeText(rawText);
                 
                 if (selectedText.length > 0) {
+                    // Determine which page the selection belongs to
+                    const range = selection.rangeCount ? selection.getRangeAt(0) : null;
+                    let pageWrapper = null;
+                    if (range) {
+                        const startNode = range.startContainer.nodeType === 3 ? range.startContainer.parentElement : range.startContainer;
+                        pageWrapper = startNode instanceof Element ? startNode.closest('.page') : null;
+                    }
+
+                    // Compute rects relative to the page wrapper
+                    currentSelectionMeta = null;
+                    if (range && pageWrapper) {
+                        const pageRect = pageWrapper.getBoundingClientRect();
+                        const rects = Array.from(range.getClientRects()).map(r => ({
+                            x: r.left - pageRect.left,
+                            y: r.top - pageRect.top,
+                            width: r.width,
+                            height: r.height,
+                        })).filter(r => r.width > 0 && r.height > 0);
+
+                        const pageNumber = Number(pageWrapper.dataset.pageNumber || '0');
+                        if (rects.length && pageNumber > 0) {
+                            currentSelectionMeta = { pageNumber, rects };
+                        }
+                    }
+
                     const position = getSelectionPosition();
                     if (position) {
                         floatingMenu.style.left = `${position.left}px`;
@@ -553,6 +714,7 @@
                     if (!floatingMenu.contains(document.activeElement)) {
                         floatingMenu.classList.add('hidden');
                     }
+                    currentSelectionMeta = null;
                 }
             }, 100);
         }
@@ -562,7 +724,9 @@
                 const newAnnotation = {
                     id: Date.now(),
                     text: selectedText,
-                    replies: []
+                    replies: [],
+                    pageNumber: currentSelectionMeta?.pageNumber || null,
+                    rects: currentSelectionMeta?.rects || [],
                 };
                 annotations.push(newAnnotation);
                 renderAnnotations();
@@ -570,6 +734,7 @@
                 floatingMenu.classList.add('hidden');
                 window.getSelection().removeAllRanges();
                 selectedText = "";
+                currentSelectionMeta = null;
             }
         }
 
@@ -605,6 +770,32 @@
 
             copyToClipboard(exportText);
             console.log("All comments exported to clipboard.");
+        }
+
+        // --- Highlight Rendering ---
+
+        function renderHighlights() {
+            // Clear all existing highlight boxes
+            document.querySelectorAll('.highlightLayer').forEach(layer => {
+                while (layer.firstChild) layer.removeChild(layer.firstChild);
+            });
+
+            if (!annotations.length) return;
+
+            annotations.forEach(ann => {
+                if (!ann.pageNumber || !Array.isArray(ann.rects)) return;
+                const pageLayer = document.querySelector(`.page[data-page-number="${ann.pageNumber}"] .highlightLayer`);
+                if (!pageLayer) return;
+                ann.rects.forEach(r => {
+                    const box = document.createElement('div');
+                    box.className = 'highlightBox';
+                    box.style.left = `${r.x}px`;
+                    box.style.top = `${r.y}px`;
+                    box.style.width = `${r.width}px`;
+                    box.style.height = `${r.height}px`;
+                    pageLayer.appendChild(box);
+                });
+            });
         }
     </script>
 </body>
