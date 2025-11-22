@@ -1,0 +1,120 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+
+body { 
+    font-family: 'Inter', sans-serif; 
+    background: radial-gradient(circle at 20% 20%, rgba(99, 102, 241, 0.08), transparent 25%), 
+                radial-gradient(circle at 80% 0%, rgba(16, 185, 129, 0.06), transparent 20%),
+                #f8fafc;
+    color: #1f2937;
+}
+
+.pill-tab {
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    transition: all 0.2s ease;
+}
+
+.pill-tab.active {
+    background: white;
+    color: #312e81;
+    box-shadow: 0 10px 30px rgba(99, 102, 241, 0.12);
+}
+
+.page-section {
+    padding: 1.5rem 1rem;
+}
+
+/* Custom styles for PDF.js text layer and viewer Test gitt ad d*/
+.pdfViewer {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    background: #f0f0f5;
+}
+
+.page {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+    margin: 10px auto;
+    position: relative;
+    background-color: white;
+    border-radius: 6px;
+}
+
+/* PDF.js Text Layer styling is crucial for selection */
+.textLayer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    color: transparent; /* Makes text invisible, but selectable */
+    overflow: hidden;
+    line-height: 1.0; /* Must match the CSS used during PDF rendering */
+    z-index: 10; /* Ensures it sits above the canvas */
+}
+
+.textLayer span {
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+}
+
+/* Layer for highlights placed between canvas and text layer */
+.highlightLayer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 7; /* below textLayer, above canvas */
+    pointer-events: none;
+}
+
+.highlightBox {
+    position: absolute;
+    background: rgba(250, 204, 21, 0.35); /* amber-400 @ 35% */
+    border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(250, 204, 21, 0.25) inset;
+    mix-blend-mode: multiply;
+}
+
+/* The comment highlight style */
+.comment-highlight {
+    background-color: #fcd34d; /* Amber-300 */
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: all 0.2s;
+}
+
+.comment-text {
+    font-style: italic;
+    color: #4b5563; /* Gray-600 */
+    border-left: 3px solid #f59e0b; /* Amber-500 */
+    padding-left: 10px;
+    white-space: pre-wrap; /* Preserve formatting */
+    font-size: 0.875rem; /* text-sm */
+}
+
+.reply-list li {
+    font-size: 0.875rem;
+    color: #374151; /* Gray-700 */
+    padding-left: 8px;
+    border-left: 2px solid #9ca3af; /* Gray-400 */
+    margin-top: 4px;
+}
+
+/* Responsive layout tweaks */
+@media (max-width: 1024px) {
+    .main-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Drag & drop visual cue */
+.drop-active {
+    outline: 3px dashed #6366f1; /* indigo-500 */
+    outline-offset: -8px;
+    background: #eef2ff; /* indigo-100 */
+}
