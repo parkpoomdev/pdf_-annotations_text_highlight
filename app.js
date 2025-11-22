@@ -15,11 +15,24 @@ const exportAllBtn = document.getElementById('export-all-btn');
 const sectionTabs = document.querySelectorAll('[data-section-target]');
 const pdfSection = document.getElementById('pdf-section');
 const textSection = document.getElementById('text-section');
+const pasteSection = document.getElementById('paste-section');
+const chooseDirBtn = document.getElementById('choose-dir-btn');
+const saveDirLabel = document.getElementById('save-dir-label');
+const pasteStatus = document.getElementById('paste-status');
+const pasteDropzone = document.getElementById('paste-dropzone');
+const pastedImageWrapper = document.getElementById('pasted-image-wrapper');
+const pastedImage = document.getElementById('pasted-image');
+const pastedMeta = document.getElementById('pasted-meta');
+
+let currentSection = 'pdf';
+let saveDirectoryHandle = null;
 
 function switchSection(target) {
-    if (pdfSection && textSection) {
+    currentSection = target;
+    if (pdfSection && textSection && pasteSection) {
         pdfSection.classList.toggle('hidden', target !== 'pdf');
         textSection.classList.toggle('hidden', target !== 'text');
+        pasteSection.classList.toggle('hidden', target !== 'paste');
     }
     sectionTabs.forEach(btn => {
         const isActive = btn.dataset.sectionTarget === target;
@@ -624,5 +637,114 @@ function renderHighlights() {
             box.style.height = `${r.height}px`;
             pageLayer.appendChild(box);
         });
+    });
+}
+
+// --- Paste Image Handling ---
+
+function updatePasteStatus(message) {
+    if (pasteStatus) pasteStatus.textContent = message;
+}
+
+function formatFilename() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `pasted-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.png`;
+}
+
+async function requestSaveDirectory() {
+    if (!window.showDirectoryPicker) {
+        updatePasteStatus('Directory picker not supported in this browser. Use Chrome/Edge.');
+        return null;
+    }
+    try {
+        const dirHandle = await window.showDirectoryPicker();
+        saveDirectoryHandle = dirHandle;
+        const name = dirHandle.name || 'Selected folder';
+        if (saveDirLabel) saveDirLabel.textContent = name;
+        updatePasteStatus('Save folder selected. Paste an image to auto-save.');
+        return dirHandle;
+    } catch (err) {
+        console.warn('Directory selection cancelled or failed:', err);
+        updatePasteStatus('Save folder not selected. Paste will preview only.');
+        return null;
+    }
+}
+
+async function ensureWritePermission(dirHandle) {
+    if (!dirHandle) return false;
+    const opts = { mode: 'readwrite' };
+    // @ts-ignore
+    if (await dirHandle.queryPermission(opts) === 'granted') return true;
+    // @ts-ignore
+    if (await dirHandle.requestPermission(opts) === 'granted') return true;
+    return false;
+}
+
+async function autoSaveImage(blob) {
+    if (!saveDirectoryHandle) {
+        updatePasteStatus('No save folder set. Click "Choose Save Folder" first.');
+        return;
+    }
+    const hasPerm = await ensureWritePermission(saveDirectoryHandle);
+    if (!hasPerm) {
+        updatePasteStatus('Permission denied for the selected folder.');
+        return;
+    }
+    const filename = formatFilename();
+    try {
+        const fileHandle = await saveDirectoryHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        updatePasteStatus(`Saved: ${filename}`);
+    } catch (err) {
+        console.error('Failed to save image:', err);
+        updatePasteStatus('Failed to save image. Check folder permissions.');
+    }
+}
+
+function showPastedPreview(blob) {
+    if (!pastedImage || !pastedImageWrapper || !pastedMeta) return;
+    const url = URL.createObjectURL(blob);
+    pastedImage.src = url;
+    pastedImageWrapper.classList.remove('hidden');
+    pastedMeta.textContent = `Size: ${(blob.size / 1024).toFixed(1)} KB • Type: ${blob.type}`;
+    pastedMeta.classList.remove('hidden');
+    pastedImage.onload = () => {
+        URL.revokeObjectURL(url);
+    };
+}
+
+function getImageFromClipboard(event) {
+    if (!event.clipboardData || !event.clipboardData.items) return null;
+    const items = Array.from(event.clipboardData.items);
+    const imageItem = items.find(it => it.type && it.type.startsWith('image/'));
+    if (!imageItem) return null;
+    const file = imageItem.getAsFile();
+    return file || null;
+}
+
+async function handlePaste(event) {
+    if (currentSection !== 'paste') return;
+    const imageFile = getImageFromClipboard(event);
+    if (!imageFile) {
+        updatePasteStatus('Clipboard does not contain an image. Copy an image then press Ctrl+V.');
+        return;
+    }
+    updatePasteStatus('Image received. Saving...');
+    showPastedPreview(imageFile);
+    await autoSaveImage(imageFile);
+}
+
+if (chooseDirBtn) {
+    chooseDirBtn.addEventListener('click', requestSaveDirectory);
+}
+
+window.addEventListener('paste', handlePaste);
+
+if (pasteDropzone) {
+    pasteDropzone.addEventListener('click', () => {
+        updatePasteStatus('Press Ctrl+V with an image copied to clipboard.');
     });
 }

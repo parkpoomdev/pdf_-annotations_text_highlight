@@ -21,6 +21,7 @@
                 <div class="flex items-center bg-indigo-50 rounded-full p-1 space-x-2">
                     <button data-section-target="pdf" class="pill-tab active px-4 py-2 rounded-full text-sm font-semibold text-indigo-800">PDF Comment</button>
                     <button data-section-target="text" class="pill-tab px-4 py-2 rounded-full text-sm font-semibold text-indigo-700">Text Reply</button>
+                    <button data-section-target="paste" class="pill-tab px-4 py-2 rounded-full text-sm font-semibold text-indigo-700">Paste Image</button>
                 </div>
             </div>
         </div>
@@ -129,6 +130,68 @@
                 </div>
                 <div class="mt-4 border border-indigo-100 rounded-xl overflow-hidden shadow-inner bg-gray-50">
                     <iframe title="Text reply workspace" src="text-reply-app.html" class="w-full h-[80vh] bg-white"></iframe>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="paste-section" class="page-section hidden">
+        <div class="max-w-5xl mx-auto space-y-4 p-4 lg:p-6">
+            <div class="bg-white border border-indigo-100 shadow-lg rounded-2xl p-6 space-y-4">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Paste Image</p>
+                        <h2 class="text-2xl font-bold text-gray-900">Paste from clipboard and auto-save</h2>
+                        <p class="text-sm text-gray-600 mt-1">Works best in Chromium browsers (Chrome/Edge) with the File System Access API.</p>
+                    </div>
+                    <div class="flex items-center space-x-2 text-sm text-gray-500">
+                        <span class="flex items-center space-x-1">
+                            <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                            <span>Press Ctrl + V with an image copied</span>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-1 space-y-3">
+                        <button id="choose-dir-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 shadow-md">Choose Save Folder</button>
+                        <div class="p-3 bg-indigo-50 rounded-lg text-sm text-gray-700">
+                            <p class="font-semibold text-indigo-800">Save folder</p>
+                            <p id="save-dir-label" class="mt-1 text-gray-600">Not selected</p>
+                        </div>
+                        <div class="p-3 bg-gray-50 rounded-lg text-sm text-gray-700">
+                            <p class="font-semibold text-gray-800">Status</p>
+                            <p id="paste-status" class="mt-1 text-gray-600">Waiting for paste...</p>
+                        </div>
+                        <div class="p-3 bg-amber-50 rounded-lg text-sm text-amber-800">
+                            <p class="font-semibold">Notes</p>
+                            <ul class="list-disc ml-4 mt-1 space-y-1">
+                                <li>Only image clipboard data is accepted.</li>
+                                <li>Auto-save uses the File System Access API; you’ll be prompted once to pick a folder.</li>
+                                <li>If your browser blocks it, you can still paste and right-click the preview to save.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2">
+                        <div id="paste-dropzone" class="h-full border-2 border-dashed border-indigo-200 rounded-2xl bg-white flex flex-col items-center justify-center p-8 text-center space-y-4">
+                            <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p class="text-lg font-semibold text-gray-800">Press Ctrl + V to paste an image</p>
+                                <p class="text-sm text-gray-500">We’ll show a preview and auto-save when a folder is selected.</p>
+                            </div>
+                            <div class="w-full max-w-xl">
+                                <div id="pasted-image-wrapper" class="hidden border border-indigo-100 rounded-xl overflow-hidden shadow-inner bg-gray-50">
+                                    <img id="pasted-image" alt="Pasted preview" class="w-full object-contain bg-white">
+                                </div>
+                                <p id="pasted-meta" class="text-xs text-gray-500 mt-2 hidden"></p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
